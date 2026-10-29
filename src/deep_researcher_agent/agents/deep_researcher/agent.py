@@ -415,6 +415,7 @@ class DeepResearcherAgent:
                     )
 
             final_cited_urls: list[str] | None = None
+            citation_metadata: list[dict] | None = None
             if citation_registry is not None:
                 final_verification = verify_citations(final_message, citation_registry)
                 if not final_verification.valid_citations:
@@ -425,12 +426,32 @@ class DeepResearcherAgent:
                         citation["url"] for citation in final_verification.valid_citations if citation.get("url")
                     )
                 )
+                # Issue #210: build structured citation metadata for the UI
+                if final_verification.all_citations:
+                    citation_metadata = [
+                        {
+                            "url": c["url"],
+                            "confidence": c.get("confidence"),
+                            "matchKind": c.get("match_kind"),  # camelCase for JSON transport
+                        }
+                        for c in final_verification.all_citations
+                        if c.get("url")
+                    ]
+                if final_verification.diagnostics:
+                    logger.info(
+                        "[CitationVerify] Final report diagnostics: %s",
+                        final_verification.diagnostics,
+                    )
 
             # Re-emit the verified/sanitized report so the frontend overwrites
             # the raw version that on_llm_end auto-emitted during ainvoke().
             for cb in self.callbacks:
                 if hasattr(cb, "emit_final_report"):
-                    cb.emit_final_report(final_message, cited_urls=final_cited_urls)
+                    cb.emit_final_report(
+                        final_message,
+                        cited_urls=final_cited_urls,
+                        citation_metadata=citation_metadata,
+                    )
                     break
 
             self._replace_last_message_content(result, final_message)

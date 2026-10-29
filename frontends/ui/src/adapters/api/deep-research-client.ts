@@ -186,6 +186,9 @@ export interface ArtifactUpdateEvent extends DeepResearchSSEEvent {
       title?: string
       caption?: string
       inline?: boolean
+      // Issue #210: confidence scoring fields (only present on citation_use events)
+      confidence?: number
+      match_kind?: string
     }
     metadata?: {
       workflow?: string
@@ -236,7 +239,7 @@ export interface DeepResearchCallbacks {
   onToolEnd?: (name: string, output?: string, eventId?: string, agentId?: string, isSandbox?: boolean) => void
   /** Called on artifact updates */
   onTodoUpdate?: (todos: TodoItem[], workflow?: string) => void
-  onCitationUpdate?: (url: string, content: string, isCited?: boolean) => void
+  onCitationUpdate?: (url: string, content: string, isCited?: boolean, confidence?: number, matchKind?: string) => void
   onFileUpdate?: (file: FileArtifactUpdate) => void
   onOutputUpdate?: (content: string, outputCategory?: string, workflow?: string) => void
   /** Called on job heartbeat (confirms job is alive during long operations) */
@@ -534,7 +537,14 @@ export const createDeepResearchClient = (options: DeepResearchStreamOptions): De
             break
           case 'citation_use':
             // citation_use = "Cited" sources (actually used in the report)
-            callbacks.onCitationUpdate?.(artifactData.url || '', artifactData.content as string, true)
+            // Issue #210: forward confidence and match_kind from the backend
+            callbacks.onCitationUpdate?.(
+              artifactData.url || '',
+              artifactData.content as string,
+              true,
+              typeof artifactData.confidence === 'number' ? artifactData.confidence : undefined,
+              typeof artifactData.match_kind === 'string' ? artifactData.match_kind : undefined,
+            )
             break
           case 'file': {
             // Generated artifacts carry durable metadata; legacy text-file events carry content.
