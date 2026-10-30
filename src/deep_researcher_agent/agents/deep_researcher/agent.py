@@ -375,6 +375,7 @@ class DeepResearcherAgent:
 
             # Post-process: verify citations against source registry
             citation_registry = None
+            first_pass_citations: list[dict] = []
             if self.enable_citation_verification and self.source_registry_middleware.has_sources():
                 registry = self.source_registry_middleware.active_registry()
                 verification = verify_citations(
@@ -388,6 +389,7 @@ class DeepResearcherAgent:
                         len(verification.removed_citations),
                     )
                 final_message = verification.verified_report
+                first_pass_citations = verification.valid_citations
                 citation_registry = registry
             # Post-process: sanitize report (strip body URLs, shortened URLs, unsafe URLs)
             sanitization = sanitize_report(final_message)
@@ -426,17 +428,30 @@ class DeepResearcherAgent:
                         citation["url"] for citation in final_verification.valid_citations if citation.get("url")
                     )
                 )
-                # Issue #210: build structured citation metadata for the UI
-                if final_verification.all_citations:
-                    citation_metadata = [
-                        {
-                            "url": c["url"],
-                            "confidence": c.get("confidence"),
-                            "matchKind": c.get("match_kind"),  # camelCase for JSON transport
+                # Issue #210: build structured citation metadata for the UI.
+                # Merge initial-pass valid citations with final-pass valid citations by URL,
+                # retaining the lower confidence and original match_kind so that repairing a
+                # truncated/prefix URL to canonical form does not inflate its confidence to 1.0.
+                merged: dict[str, dict] = {}
+                for citation in [*first_pass_citations, *final_verification.valid_citations]:
+                    url = citation.get("url")
+                    if not url:
+                        continue
+                    confidence = citation.get("confidence")
+                    previous = merged.get(url)
+                    if previous is None or (
+                        confidence is not None
+                        and (
+                            previous["confidence"] is None
+                            or confidence < previous["confidence"]
+                        )
+                    ):
+                        merged[url] = {
+                            "url": url,
+                            "confidence": confidence,
+                            "matchKind": citation.get("match_kind"),
                         }
-                        for c in final_verification.all_citations
-                        if c.get("url")
-                    ]
+                citation_metadata = list(merged.values()) or None
                 if final_verification.diagnostics:
                     logger.info(
                         "[CitationVerify] Final report diagnostics: %s",
@@ -447,11 +462,23 @@ class DeepResearcherAgent:
             # the raw version that on_llm_end auto-emitted during ainvoke().
             for cb in self.callbacks:
                 if hasattr(cb, "emit_final_report"):
-                    cb.emit_final_report(
-                        final_message,
-                        cited_urls=final_cited_urls,
-                        citation_metadata=citation_metadata,
-                    )
+                    try:
+                        if citation_metadata is not None:
+                            cb.emit_final_report(
+                                final_message,
+                                cited_urls=final_cited_urls,
+                                citation_metadata=citation_metadata,
+                            )
+                        else:
+                            cb.emit_final_report(
+                                final_message,
+                                cited_urls=final_cited_urls,
+                            )
+                    except TypeError:
+                        cb.emit_final_report(
+                            final_message,
+                            cited_urls=final_cited_urls,
+                        )
                     break
 
             self._replace_last_message_content(result, final_message)

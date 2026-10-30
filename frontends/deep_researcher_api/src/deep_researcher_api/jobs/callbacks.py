@@ -398,6 +398,7 @@ class AgentEventCallback(BaseCallbackHandler):
         *,
         cited_urls: Sequence[str] | None = None,
         citation_metadata: list[dict] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Emit the post-processed final report as an OUTPUT artifact.
 

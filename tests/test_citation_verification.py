@@ -39,15 +39,15 @@ def test_calculate_confidence_mapping():
 def test_resolve_with_kind_exact_and_truncation():
     """Verify resolve_with_kind identifies exact and truncation matches."""
     registry = SourceRegistry()
-    registry.add(SourceEntry(url="https://example.com/research/paper1?ref=abc"))
+    registry.add(SourceEntry(url="https://example.com/research/paper1?id=abc"))
 
-    resolved, kind = registry.resolve_with_kind("https://example.com/research/paper1?ref=abc")
-    assert resolved == "https://example.com/research/paper1?ref=abc"
+    resolved, kind = registry.resolve_with_kind("https://example.com/research/paper1?id=abc")
+    assert resolved == "https://example.com/research/paper1?id=abc"
     assert kind == "exact"
 
     # Truncation match
     resolved, kind = registry.resolve_with_kind("https://example.com/research/paper1")
-    assert resolved == "https://example.com/research/paper1?ref=abc"
+    assert resolved == "https://example.com/research/paper1?id=abc"
     assert kind == "truncation"
 
 
@@ -72,7 +72,7 @@ def test_resolve_with_kind_unmatched():
 
 
 def test_verify_citations_scored_and_unmatched_kept():
-    """Verify citations below threshold (host-only, unmatched) are kept with score (Issue #210)."""
+    """Verify citations below threshold: host-only kept with score, unmatched removed (Issue #210)."""
     registry = SourceRegistry()
     registry.add(SourceEntry(url="https://example.com/research/report"))
 
@@ -86,11 +86,15 @@ def test_verify_citations_scored_and_unmatched_kept():
 
     result = verify_citations(report, registry)
 
-    # Issue #210: Citations below threshold are kept with score rather than removed
+    # Issue #210: Host-only citations are kept in valid_citations with score;
+    # completely unmatched/fabricated citations are removed from valid_citations.
     valid_numbers = [c["number"] for c in result.valid_citations]
     assert 1 in valid_numbers
     assert 2 in valid_numbers
-    assert 3 in valid_numbers
+    assert 3 not in valid_numbers
+
+    removed_numbers = [c["number"] for c in result.removed_citations]
+    assert 3 in removed_numbers
 
     # Verify per-citation verification record fields (verified, confidence, match_kind, diagnostics)
     exact_cite = next(c for c in result.valid_citations if c["number"] == 1)
@@ -106,14 +110,14 @@ def test_verify_citations_scored_and_unmatched_kept():
     assert host_only_cite["diagnostics"] == "host_only_match"
     assert host_only_cite["url"] == "https://example.com/other/subpage"
 
-    unmatched_cite = next(c for c in result.valid_citations if c["number"] == 3)
+    unmatched_cite = next(c for c in result.all_citations if c["number"] == 3)
     assert unmatched_cite["verified"] is False
     assert unmatched_cite["confidence"] == 0.00
     assert unmatched_cite["match_kind"] == "unmatched"
     assert unmatched_cite["diagnostics"] == "url_not_in_registry"
     assert unmatched_cite["url"] == "https://hallucinated-source.com/fake"
 
-    # Verify all_citations completeness
+    # Verify all_citations completeness (retains all records for telemetry)
     assert len(result.all_citations) == 3
 
     # Verify aggregated diagnostics telemetry for removals and downgrades
@@ -125,4 +129,20 @@ def test_verify_citations_scored_and_unmatched_kept():
     diag_host_only = next(d for d in result.diagnostics if d["reason"] == "host_only_match")
     assert diag_host_only["count"] == 1
     assert 2 in diag_host_only["citation_numbers"]
+
+
+def test_all_unmatched_citations_leaves_valid_citations_empty():
+    """Verify a report with only fabricated sources leaves valid_citations empty."""
+    registry = SourceRegistry()
+    registry.add(SourceEntry(url="https://example.com/valid/source"))
+
+    report = (
+        "Completely fake claim [1].\n\n"
+        "## Sources\n"
+        "[1] Hallucinated: https://completely-fake-domain.xyz\n"
+    )
+    result = verify_citations(report, registry)
+    assert len(result.valid_citations) == 0
+    assert len(result.removed_citations) == 1
+    assert len(result.all_citations) == 1
 

@@ -382,77 +382,9 @@ class SourceRegistry:
     def resolve_url(self, url: str) -> str | None:
         """Return the registry URL (full, as returned by the tool) when the report URL matches.
 
-        Matching strategy (first unambiguous match wins):
-        1. Exact match — raw or normalized
-        2. Truncation — report URL is a prefix of exactly one registry URL (raw)
-        3. Prefix — report normalized is prefix of registry normalized
-        4. Child-path — report path is a subpath of exactly one registry URL
-        5. Query-subset — same host+path, report params subset of one registry URL
-
-        Always returns the tool's URL (with query params etc.). If multiple
-        registry URLs match, we reject (ambiguous).
+        Delegates to resolve_with_kind() and returns only the resolved URL.
         """
-        # 1. Exact match — raw or normalized; retain the tool's URL
-        if url in self._urls:
-            return self._urls[url].url
-        normalized = _normalize_url(url)
-        if normalized in self._urls:
-            return self._urls[normalized].url
-
-        # 2. Truncation — report URL is a prefix of exactly one registry URL (raw).
-        #    Normalized match fails when the report is cut mid-query (param order differs).
-        truncation_entries = [e for e in self._urls.values() if e.url and e.url.startswith(url)]
-        result = self._pick_unique(list({e.url: e for e in truncation_entries}.values()), "truncation", url)
-        if result:
-            return result
-
-        # 3. Prefix match — report normalized is prefix of registry normalized
-        #    Deduplicate by url to avoid raw+normalized keys for the same entry
-        #    being counted as ambiguous.
-        prefix_entries = [e for n, e in self._urls.items() if n.startswith(normalized)]
-        result = self._pick_unique(
-            list({e.url: e for e in prefix_entries}.values()),
-            "prefix",
-            url,
-        )
-        if result:
-            return result
-
-        parsed = urlparse(normalized)
-        host, path = parsed.netloc, parsed.path
-        same_host = [p for p in self._parsed_urls.values() if p.host == host]
-
-        # 4. Child-path match — report path extends a registry path (subpage)
-        #    Use rstrip("/") + "/" to enforce segment boundaries (prevents
-        #    /us/benefits matching /us/benefitsOther).
-        result = self._pick_unique(
-            [
-                p.entry
-                for p in same_host
-                if len(p.path_segments) >= 2 and path != p.path and path.startswith(p.path.rstrip("/") + "/")
-            ],
-            "child-path",
-            url,
-        )
-        if result:
-            return result
-
-        # 5. Query-subset match — same host+path, report params are a subset of registry params
-        report_qs = parse_qs(parsed.query, keep_blank_values=True)
-        if report_qs:
-            result = self._pick_unique(
-                [
-                    p.entry
-                    for p in same_host
-                    if p.path == path and p.query and all(p.query.get(k) == v for k, v in report_qs.items())
-                ],
-                "query-subset",
-                url,
-            )
-            if result:
-                return result
-
-        return None
+        return self.resolve_with_kind(url)[0]
 
     def resolve_with_kind(self, url: str) -> tuple[str | None, str]:
         """Return (registry_url_or_None, match_kind) for a report URL.
@@ -1345,12 +1277,16 @@ def verify_citations(
                     logger.debug("[CitationVerify]   [%d] VALID  — URL (%s)", num, match_kind)
                 valid_citations.append({**citation_record, "url": canonical})
             else:
-                # Issue #210: Citations below threshold (host-only or unmatched) are retained
-                # in valid_citations and all_citations with their confidence score rather than stripped.
-                # The UI decides how to render based on confidence (e.g. warning badge).
-                logger.info("[CitationVerify]   [%d] KEPT(%s) — confidence=%.2f", num, match_kind, confidence)
-                valid_citations.append(citation_record)
-                diagnostics_records.append({"number": num, "line": full_line, "reason": diag_reason})
+                if match_kind == "unmatched":
+                    logger.info("[CitationVerify]   [%d] REMOVE — URL not in registry", num)
+                    removed_entry = {"number": num, "line": full_line, "reason": diag_reason}
+                    removed_citations.append(removed_entry)
+                    diagnostics_records.append(removed_entry)
+                else:
+                    # Issue #210: Host-only citations are retained with low-confidence score
+                    logger.info("[CitationVerify]   [%d] KEPT(%s) — confidence=%.2f", num, match_kind, confidence)
+                    valid_citations.append(citation_record)
+                    diagnostics_records.append({"number": num, "line": full_line, "reason": diag_reason})
             continue
 
         # Try knowledge-layer citation key (lenient — passes registry for fuzzy filename match)
@@ -1375,9 +1311,10 @@ def verify_citations(
                 logger.debug("[CitationVerify]   [%d] VALID  — citation key", num)
                 valid_citations.append(citation_record)
             else:
-                logger.info("[CitationVerify]   [%d] KEPT(unmatched citation key) — confidence=0.0", num)
-                valid_citations.append(citation_record)
-                diagnostics_records.append({"number": num, "line": full_line, "reason": diag_reason})
+                logger.info("[CitationVerify]   [%d] REMOVE — citation key not in registry", num)
+                removed_entry = {"number": num, "line": full_line, "reason": diag_reason}
+                removed_citations.append(removed_entry)
+                diagnostics_records.append(removed_entry)
             continue
 
         # Backfill: the writer emitted "[N] Title" but dropped the verified URL.
