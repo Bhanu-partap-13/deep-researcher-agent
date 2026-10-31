@@ -239,7 +239,13 @@ export interface DeepResearchCallbacks {
   onToolEnd?: (name: string, output?: string, eventId?: string, agentId?: string, isSandbox?: boolean) => void
   /** Called on artifact updates */
   onTodoUpdate?: (todos: TodoItem[], workflow?: string) => void
-  onCitationUpdate?: (url: string, content: string, isCited?: boolean, confidence?: number, matchKind?: string) => void
+  onCitationUpdate?: (
+    url: string,
+    content: string,
+    isCited?: boolean,
+    confidence?: number,
+    matchKind?: CitationMatchKind
+  ) => void
   onFileUpdate?: (file: FileArtifactUpdate) => void
   onOutputUpdate?: (content: string, outputCategory?: string, workflow?: string) => void
   /** Called on job heartbeat (confirms job is alive during long operations) */
@@ -257,7 +263,7 @@ export interface DeepResearchCallbacks {
 // ============================================================
 
 /** Supported citation verification match kinds (Issue #210) */
-export const VALID_MATCH_KINDS = new Set([
+export const MATCH_KINDS = [
   'exact',
   'truncation',
   'prefix',
@@ -265,7 +271,14 @@ export const VALID_MATCH_KINDS = new Set([
   'query-subset',
   'host-only',
   'unmatched',
-])
+] as const
+
+export type CitationMatchKind = (typeof MATCH_KINDS)[number]
+
+export const VALID_MATCH_KINDS: ReadonlySet<string> = new Set(MATCH_KINDS)
+
+export const isCitationMatchKind = (value: unknown): value is CitationMatchKind =>
+  typeof value === 'string' && VALID_MATCH_KINDS.has(value)
 
 /**
  * Normalize tool input from the backend SSE stream.
@@ -558,10 +571,8 @@ export const createDeepResearchClient = (options: DeepResearchStreamOptions): De
               rawConfidence <= 1
                 ? rawConfidence
                 : undefined
-            const validMatchKind =
-              typeof rawMatchKind === 'string' && VALID_MATCH_KINDS.has(rawMatchKind)
-                ? rawMatchKind
-                : undefined
+            const validMatchKind: CitationMatchKind | undefined =
+              isCitationMatchKind(rawMatchKind) ? rawMatchKind : undefined
 
             callbacks.onCitationUpdate?.(
               artifactData.url || '',

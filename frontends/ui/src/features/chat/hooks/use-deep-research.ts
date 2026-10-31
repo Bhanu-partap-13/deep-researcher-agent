@@ -23,7 +23,7 @@ import {
   type TodoItem,
 } from '@/adapters/api'
 import { useChatStore } from '../store'
-import type { CitationSource } from '../types'
+import type { CitationMatchKind } from '../types'
 import { useAuth } from '@/adapters/auth'
 import { useLayoutStore } from '@/features/layout/store'
 import { checkBackendHealthCached } from '@/shared/hooks/use-backend-health'
@@ -132,9 +132,9 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
     const state = useChatStore.getState()
     return Boolean(
       state.isDeepResearchStreaming &&
-        (!expectedJobId || state.deepResearchJobId === expectedJobId) &&
-        state.deepResearchOwnerConversationId &&
-        state.currentConversation?.id === state.deepResearchOwnerConversationId
+      (!expectedJobId || state.deepResearchJobId === expectedJobId) &&
+      state.deepResearchOwnerConversationId &&
+      state.currentConversation?.id === state.deepResearchOwnerConversationId
     )
   }, [])
 
@@ -216,7 +216,7 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
           content: string
           isCited: boolean
           confidence?: number
-          matchKind?: string
+          matchKind?: CitationMatchKind
         }>,
         files: new Map<string, FileArtifactUpdate>(),
         reportContent: null as string | null,
@@ -335,7 +335,7 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
           content: c.content,
           isCited: c.isCited,
           confidence: c.confidence,
-          matchKind: c.matchKind as CitationSource['matchKind'],
+          matchKind: c.matchKind,
           timestamp: now,
         }))
         const files = Array.from(buf.files.values()).map((file, i) => ({ id: `file-${i}`, ...file, timestamp: now }))
@@ -773,7 +773,7 @@ export const useDeepResearch = (): UseDeepResearchReturn => {
       }
       setIsTimedOut(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- connectRef avoids re-triggering on token refresh; store actions are stable refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- connectRef avoids re-triggering on token refresh; store actions are stable refs
   }, [deepResearchJobId, isDeepResearchStreaming, disconnect, setResearchPanelTab, openRightPanel])
 
   return {

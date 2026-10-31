@@ -7,6 +7,10 @@
  * Type definitions for chat messages, conversations, and state.
  */
 
+import type { CitationMatchKind } from '@/adapters/api'
+
+export type { CitationMatchKind }
+
 /** Message role types */
 export type MessageRole = 'user' | 'assistant' | 'system'
 
@@ -275,7 +279,7 @@ export interface CitationSource {
   /** Confidence score from citation verification [0.0, 1.0]. Absent when not verified. */
   confidence?: number
   /** Match kind from citation verification. Absent when not verified. */
-  matchKind?: 'exact' | 'truncation' | 'prefix' | 'child-path' | 'query-subset' | 'host-only' | 'unmatched'
+  matchKind?: CitationMatchKind
 }
 
 /** Plan message for chat/HITL display and restore flows */
@@ -637,7 +641,7 @@ export interface ChatActions {
     content: string,
     isCited?: boolean,
     confidence?: number,
-    matchKind?: string
+    matchKind?: CitationMatchKind
   ) => void
   /** Set the full todo list from deep research (replaces existing) */
   setDeepResearchTodos: (todos: Array<{ content: string; status: string }>) => void

@@ -38,6 +38,7 @@ import type {
   DeepResearchFile,
   DeepResearchBannerType,
   DeepResearchTodo,
+  CitationMatchKind,
 } from './types'
 import { getErrorMeta } from './lib/error-registry'
 import {
@@ -2107,7 +2108,7 @@ export const useChatStore = create<ChatStore>()(
           content: string,
           isCited?: boolean,
           confidence?: number,
-          matchKind?: string
+          matchKind?: CitationMatchKind
         ) => {
           const { deepResearchCitations } = get()
 
@@ -2124,10 +2125,7 @@ export const useChatStore = create<ChatStore>()(
                   // Once cited, always cited (citation_use trumps citation_source)
                   isCited: isCited || c.isCited,
                   confidence: confidence !== undefined ? confidence : c.confidence,
-                  matchKind:
-                    matchKind !== undefined
-                      ? (matchKind as CitationSource['matchKind'])
-                      : c.matchKind,
+                  matchKind: matchKind !== undefined ? matchKind : c.matchKind,
                 }
               }
               return c
@@ -2147,7 +2145,7 @@ export const useChatStore = create<ChatStore>()(
               timestamp: new Date(),
               isCited,
               confidence,
-              matchKind: matchKind as CitationSource['matchKind'],
+              matchKind,
             }
 
             set(

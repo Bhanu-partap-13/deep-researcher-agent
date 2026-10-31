@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from collections.abc import Callable
 from collections.abc import Sequence
@@ -65,6 +66,17 @@ PARENT_REPORT_CONTEXT_PATH = "/shared/parent_report_context.json"
 
 # Path to this agent's directory (for loading prompts)
 AGENT_DIR = Path(__file__).parent
+
+
+def _accepts_citation_metadata(fn: Callable[..., Any]) -> bool:
+    """Return whether a callback's emit_final_report accepts citation_metadata."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "citation_metadata" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
 
 
 class WorkflowOutputError(RuntimeError):
@@ -462,23 +474,10 @@ class DeepResearcherAgent:
             # the raw version that on_llm_end auto-emitted during ainvoke().
             for cb in self.callbacks:
                 if hasattr(cb, "emit_final_report"):
-                    try:
-                        if citation_metadata is not None:
-                            cb.emit_final_report(
-                                final_message,
-                                cited_urls=final_cited_urls,
-                                citation_metadata=citation_metadata,
-                            )
-                        else:
-                            cb.emit_final_report(
-                                final_message,
-                                cited_urls=final_cited_urls,
-                            )
-                    except TypeError:
-                        cb.emit_final_report(
-                            final_message,
-                            cited_urls=final_cited_urls,
-                        )
+                    emit_kwargs: dict[str, Any] = {"cited_urls": final_cited_urls}
+                    if citation_metadata is not None and _accepts_citation_metadata(cb.emit_final_report):
+                        emit_kwargs["citation_metadata"] = citation_metadata
+                    cb.emit_final_report(final_message, **emit_kwargs)
                     break
 
             self._replace_last_message_content(result, final_message)

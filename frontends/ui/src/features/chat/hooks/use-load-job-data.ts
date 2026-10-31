@@ -32,7 +32,7 @@ import {
   type TodoItem,
 } from '@/adapters/api'
 import { useChatStore } from '../store'
-import type { CitationSource } from '../types'
+import type { CitationMatchKind } from '../types'
 import {
   getDeepResearchJobLoadErrorDetails,
   getDeepResearchJobLoadFailureKind,
@@ -379,7 +379,7 @@ export const useLoadJobData = (): UseLoadJobDataReturn => {
             content: string
             isCited: boolean
             confidence?: number
-            matchKind?: string
+            matchKind?: CitationMatchKind
           }>,
           files: new Map<string, FileArtifactUpdate>(), // filename -> latest event (deduped)
           reportContent: null as string | null,
@@ -486,7 +486,7 @@ export const useLoadJobData = (): UseLoadJobDataReturn => {
             content: c.content,
             isCited: c.isCited,
             confidence: c.confidence,
-            matchKind: c.matchKind as CitationSource['matchKind'],
+            matchKind: c.matchKind,
             timestamp: now,
           }))
 
